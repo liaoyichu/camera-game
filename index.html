@@ -112,6 +112,25 @@
       z-index: 100;
     }
 
+    #modeToggle {
+      position: fixed;
+      top: 100px;
+      left: 30px;
+      font-size: 14px;
+      color: #ff6b35;
+      background: #0a0a1a90;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #ff6b3540;
+      cursor: pointer;
+      z-index: 100;
+      font-family: 'Orbitron', sans-serif;
+    }
+
+    #modeToggle:hover {
+      background: #ff6b3520;
+    }
+
     #startScreen {
       position: fixed;
       top: 0;
@@ -214,6 +233,7 @@
   <div id="score" class="hidden">¥0</div>
   <div id="target" class="hidden">目标: ¥1000</div>
   <div id="netsLeft" class="hidden">渔网: 3</div>
+  <button id="modeToggle" class="hidden">🖐️ 手抓模式</button>
   
   <div id="startScreen">
     <h1>海底捞鱼</h1>
@@ -247,6 +267,7 @@
     const startBtn = document.getElementById('startBtn');
     const fingerGuide = document.getElementById('fingerGuide');
     const fingerStatus = document.getElementById('fingerStatus');
+    const modeToggle = document.getElementById('modeToggle');
 
     let width, height;
     let gameStarted = false;
@@ -261,6 +282,7 @@
     let bubbles = [];
     let nets = [];
     let tracking = false;
+    let handCatchMode = true;
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     
@@ -703,6 +725,35 @@
       const fx = finger.targetX;
       const fy = finger.targetY;
       
+      if (handCatchMode) {
+        for (let j = fishes.length - 1; j >= 0; j--) {
+          const fish = fishes[j];
+          const dist = Math.sqrt((fx - fish.x) ** 2 + (fy - fish.y) ** 2);
+          
+          if (dist < 40 + fish.size) {
+            const value = fish.isBig ? BIG_FISH_VALUE : FISH_VALUE;
+            money += value;
+            scoreEl.textContent = `¥${money}`;
+            
+            createBubbles(fish.x, fish.y, 15);
+            playCatchSound();
+            
+            fishes.splice(j, 1);
+            
+            if (money >= GOAL && !gameWon) {
+              gameWon = true;
+              setTimeout(() => {
+                playWinSound();
+                winScreen.style.display = 'flex';
+              }, 500);
+            }
+            
+            setTimeout(() => spawnFish(false), 500);
+          }
+        }
+        return;
+      }
+      
       for (let i = nets.length - 1; i >= 0; i--) {
         const net = nets[i];
         
@@ -870,6 +921,7 @@
       scoreEl.classList.remove('hidden');
       targetEl.classList.remove('hidden');
       netsLeftEl.classList.remove('hidden');
+      modeToggle.classList.remove('hidden');
       
       gameStarted = true;
       money = 0;
@@ -883,6 +935,13 @@
       initFishes();
       loop();
     }
+
+    modeToggle.addEventListener('click', () => {
+      handCatchMode = !handCatchMode;
+      modeToggle.textContent = handCatchMode ? '🖐️ 手抓模式' : '🎣 渔网模式';
+      modeToggle.style.color = handCatchMode ? '#ff6b35' : '#00bfff';
+      modeToggle.style.borderColor = handCatchMode ? '#ff6b3540' : '#00bfff40';
+    });
 
     startBtn.addEventListener('click', startGame);
     window.addEventListener('resize', resize);
