@@ -19,17 +19,20 @@ jobs:
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
+          mkdir -p ../gh-pages-deploy
+          cd ../gh-pages-deploy
+          git init
           git checkout --orphan gh-pages
-          git rm -rf .
-          mkdir -p ../deploy && cp -r ./* ../deploy/ 2>/dev/null || true
-          cp -r ./.github ../deploy/ 2>/dev/null || true
-          cd ../deploy
+          rm -rf *
+          cp -r /home/runner/work/camera-game/camera-game/* . 2>/dev/null || true
+          cp -r /home/runner/work/camera-game/camera-game/.* . 2>/dev/null || true
+          rm -rf .github
           git add -A
           git commit -m "Deploy to GitHub Pages" || true
 
       - name: Push
         run: |
-          cd ../deploy
+          cd /home/runner/work/gh-pages-deploy
           git push -f origin gh-pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
