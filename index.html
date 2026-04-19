@@ -17,7 +17,6 @@
       min-height: 100vh;
       overflow: hidden;
       font-family: 'Orbitron', sans-serif;
-      touch-action: none;
     }
 
     #gameCanvas {
@@ -25,7 +24,62 @@
       position: fixed;
       top: 0;
       left: 0;
-      cursor: crosshair;
+    }
+
+    #videoContainer {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 200px;
+      height: 150px;
+      border: 3px solid #00ffaa;
+      border-radius: 12px;
+      overflow: hidden;
+      opacity: 0.9;
+      box-shadow: 0 0 30px #00ffaa60;
+      z-index: 50;
+    }
+
+    #videoCanvas {
+      width: 100%;
+      height: 100%;
+      transform: scaleX(-1);
+    }
+
+    #fingerGuide {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      font-size: 14px;
+      color: #00ffaa;
+      background: #0a0a1a90;
+      padding: 10px 15px;
+      border-radius: 8px;
+      border: 1px solid #00ffaa40;
+      z-index: 50;
+    }
+
+    #fingerGuide .dot {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      background: #00ffaa;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: pulse 1s infinite;
+    }
+
+    #fingerGuide.detecting {
+      border-color: #ff6b35;
+    }
+
+    #fingerGuide.detecting .dot {
+      background: #ff6b35;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.3); }
     }
 
     #score {
@@ -153,13 +207,17 @@
 <body>
   <canvas id="gameCanvas"></canvas>
   
+  <div id="videoContainer" class="hidden">
+    <canvas id="videoCanvas"></canvas>
+  </div>
+  
   <div id="score" class="hidden">¥0</div>
   <div id="target" class="hidden">目标: ¥1000</div>
   <div id="netsLeft" class="hidden">渔网: 3</div>
   
   <div id="startScreen">
     <h1>海底捞鱼</h1>
-    <p>点击屏幕发射���网捕捉鱼儿们!</p>
+    <p>移动手指指挥渔网捕捉鱼儿们!</p>
     <p class="goal">一条鱼 = ¥50 | 大鱼 = ¥100</p>
     <p>目标是赚够 ¥1000!</p>
     <button id="startBtn">开始捕鱼</button>
@@ -171,15 +229,24 @@
     <button id="startBtn" onclick="location.reload()">再玩一次</button>
   </div>
 
+  <div id="fingerGuide" class="hidden">
+    <span class="dot"></span>手指: <span id="fingerStatus">等待...</span>
+  </div>
+
   <script>
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
+    const videoCanvas = document.getElementById('videoCanvas');
+    const videoCtx = videoCanvas.getContext('2d', { willReadFrequently: true });
+    const videoContainer = document.getElementById('videoContainer');
     const scoreEl = document.getElementById('score');
     const targetEl = document.getElementById('target');
     const netsLeftEl = document.getElementById('netsLeft');
     const startScreen = document.getElementById('startScreen');
     const winScreen = document.getElementById('winScreen');
     const startBtn = document.getElementById('startBtn');
+    const fingerGuide = document.getElementById('fingerGuide');
+    const fingerStatus = document.getElementById('fingerStatus');
 
     let width, height;
     let gameStarted = false;
@@ -189,9 +256,11 @@
     const FISH_VALUE = 50;
     const BIG_FISH_VALUE = 100;
 
+    let finger = { x: 0, y: 0, active: false, targetX: 0, targetY: 0 };
     let fishes = [];
     let bubbles = [];
     let nets = [];
+    let tracking = false;
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     
@@ -559,6 +628,34 @@
       ctx.restore();
     }
 
+    function drawFinger() {
+      if (!finger.active) return;
+      
+      const x = finger.x;
+      const y = finger.y;
+      
+      for (let i = 3; i >= 0; i--) {
+        ctx.beginPath();
+        ctx.arc(x, y, 30 + i * 10, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(0, 255, 170, ${0.2 - i * 0.04})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      
+      ctx.beginPath();
+      ctx.arc(x, y, 30, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0, 255, 170, 0.2)';
+      ctx.fill();
+      ctx.strokeStyle = '#00ffaa';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.fillStyle = '#00ffaa';
+      ctx.fill();
+    }
+
     function updateFishes() {
       for (let i = fishes.length - 1; i >= 0; i--) {
         const fish = fishes[i];
@@ -601,6 +698,11 @@
     }
 
     function checkCollisions() {
+      if (!finger.active) return;
+      
+      const fx = finger.targetX;
+      const fy = finger.targetY;
+      
       for (let i = nets.length - 1; i >= 0; i--) {
         const net = nets[i];
         
@@ -635,19 +737,15 @@
           }
         }
       }
-    }
-
-    function handleClick(e) {
-      if (!gameStarted || gameWon) return;
       
-      const rect = canvas.getBoundingClientRect();
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-      const clickX = clientX - rect.left;
-      const clickY = clientY - rect.top;
-      
-      if (clickY > 100) {
-        shootNet(clickX, clickY);
+      for (let i = fishes.length - 1; i >= 0; i--) {
+        const fish = fishes[i];
+        const dist = Math.sqrt((fx - fish.x) ** 2 + (fy - fish.y) ** 2);
+        
+        if (dist < 40 + fish.size) {
+          shootNet(fish.x, fish.y);
+          break;
+        }
       }
     }
 
@@ -664,6 +762,7 @@
       fishes.forEach(drawFish);
       nets.forEach(drawNet);
       drawLauncher();
+      drawFinger();
     }
 
     function updateUI() {
@@ -685,6 +784,87 @@
       requestAnimationFrame(loop);
     }
 
+    let video, vWidth, vHeight;
+    let prevFrame = null;
+    let motionX = 0, motionY = 0;
+    let motionCount = 0;
+
+    async function setupCamera() {
+      try {
+        video = document.createElement('video');
+        video.srcObject = await navigator.mediaDevices.getUserMedia({
+          video: { width: 160, height: 120, facingMode: 'user' }
+        });
+        video.play();
+        
+        vWidth = 160;
+        vHeight = 120;
+        videoCanvas.width = vWidth;
+        videoCanvas.height = vHeight;
+        
+        videoContainer.classList.remove('hidden');
+        fingerGuide.classList.remove('hidden');
+        
+        tracking = true;
+        processFrame();
+        
+      } catch (err) {
+        console.error('Camera error:', err);
+      }
+    }
+
+    function processFrame() {
+      if (!tracking) return;
+      
+      videoCtx.drawImage(video, 0, 0, vWidth, vHeight);
+      const frame = videoCtx.getImageData(0, 0, vWidth, vHeight);
+      
+      if (prevFrame) {
+        let sumX = 0, sumY = 0, count = 0;
+        
+        for (let y = 20; y < vHeight - 20; y += 4) {
+          for (let x = 20; x < vWidth - 20; x += 4) {
+            const i = (y * vWidth + x) * 4;
+            
+            const diff = Math.abs(frame.data[i] - prevFrame.data[i]) +
+                        Math.abs(frame.data[i+1] - prevFrame.data[i+1]) +
+                        Math.abs(frame.data[i+2] - prevFrame.data[i+2]);
+            
+            if (diff > 50) {
+              const skin = frame.data[i+1] > frame.data[i] && frame.data[i+1] > frame.data[i+2];
+              if (skin) {
+                sumX += x;
+                sumY += y;
+                count++;
+              }
+            }
+          }
+        }
+        
+        if (count > 50) {
+          motionX = (vWidth - sumX / count) / vWidth * width;
+          motionY = (sumY / count) / vHeight * height;
+          
+          finger.x = finger.x * 0.7 + motionX * 0.3;
+          finger.y = finger.y * 0.7 + motionY * 0.3;
+          finger.active = true;
+          
+          finger.targetX = finger.x;
+          finger.targetY = finger.y;
+          
+          fingerStatus.textContent = '已检测';
+          fingerGuide.classList.remove('detecting');
+        } else {
+          finger.active = false;
+          fingerStatus.textContent = '移动手指...';
+          fingerGuide.classList.add('detecting');
+        }
+      }
+      
+      prevFrame = frame;
+      setTimeout(processFrame, 50);
+    }
+
     function startGame() {
       startScreen.classList.add('hidden');
       scoreEl.classList.remove('hidden');
@@ -698,9 +878,7 @@
         audioCtx.resume();
       }
       
-      canvas.addEventListener('mousedown', handleClick);
-      canvas.addEventListener('touchstart', handleClick);
-      
+      setupCamera();
       updateUI();
       initFishes();
       loop();
