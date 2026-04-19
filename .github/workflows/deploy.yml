@@ -19,16 +19,17 @@ jobs:
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          git branch -D gh-pages || true
           git checkout --orphan gh-pages
           git rm -rf .
-          cp * ../ 2>/dev/null || true
-          cp .* ../ 2>/dev/null || true
+          mkdir -p ../deploy && cp -r ./* ../deploy/ 2>/dev/null || true
+          cp -r ./.github ../deploy/ 2>/dev/null || true
+          cd ../deploy
           git add -A
           git commit -m "Deploy to GitHub Pages" || true
-          
+
       - name: Push
         run: |
+          cd ../deploy
           git push -f origin gh-pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
